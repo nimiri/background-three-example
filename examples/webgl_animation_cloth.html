@@ -1,567 +1,490 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<title>three.js webgl - cloth simulation</title>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link type="text/css" rel="stylesheet" href="main.css">
-		<style>
-			body {
-				background-color: #cce0ff;
-				color: #000;
-			}
-			a {
-				color: #080;
-			}
-		</style>
-	</head>
+  <head>
+    <title>three.js webgl - cloth simulation</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <link type="text/css" rel="stylesheet" href="main.css" />
+    <style>
+      body {
+        background-color: #cce0ff;
+        color: #000;
+      }
+      a {
+        color: #080;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="info">
+      Simple Cloth Simulation<br />
+      Verlet integration with relaxed constraints<br />
+    </div>
 
-	<body>
-		<div id="info">Simple Cloth Simulation<br/>
-			Verlet integration with relaxed constraints<br/>
-		</div>
+    <script type="module">
+      import * as THREE from "../build/three.module.js";
 
-		<script type="module">
+      import Stats from "./jsm/libs/stats.module.js";
+      import { GUI } from "./jsm/libs/dat.gui.module.js";
+
+      import { OrbitControls } from "./jsm/controls/OrbitControls.js";
+
+      /*
+       * Cloth Simulation using a relaxed constraints solver
+       */
+
+      // Suggested Readings
+
+      // Advanced Character Physics by Thomas Jakobsen Character
+      // http://freespace.virgin.net/hugo.elias/models/m_cloth.htm
+      // http://en.wikipedia.org/wiki/Cloth_modeling
+      // http://cg.alexandra.dk/tag/spring-mass-system/
+      // Real-time Cloth Animation http://www.darwin3d.com/gamedev/articles/col0599.pdf
+
+      var params = {
+        enableWind: true
+      };
+
+      var DAMPING = 0.05;
+      var DRAG = 1 - DAMPING;
+      var MASS = 50000;
+      var restDistance = 50;
+
+      var WIND_STRENGTH = 900000;
+
+      var xSegs = 1;
+      var ySegs = 2;
+
+      var clothFunction = plane(restDistance * xSegs, restDistance * ySegs);
+
+      var cloth = new Cloth(xSegs, ySegs);
+
+      var GRAVITY = 150 * 1.4;
+      var gravity = new THREE.Vector3(50, -GRAVITY, 50).multiplyScalar(MASS);
+
+      var TIMESTEP = 18 / 1000;
+      var TIMESTEP_SQ = TIMESTEP * TIMESTEP;
+
+      var windForce = new THREE.Vector3(0, 0, 0);
+
+      var tmpForce = new THREE.Vector3();
+
+      var lastTime;
+
+      var tmpTime = 0;
+
+      function plane(width, height) {
+        return function(u, v, target) {
+          var x = (v + 0.5) * height;
+          var y = 0;
+          var z = (u - 0.5) * width;
+
+          target.set(x, y, z);
+        };
+      }
+
+      function Particle(x, y, z, mass) {
+        this.position = new THREE.Vector3();
+        this.previous = new THREE.Vector3();
+        this.original = new THREE.Vector3();
+        this.a = new THREE.Vector3(1, 0.5, 0); // acceleration
+        this.mass = mass;
+        this.invMass = 1 / mass;
+        this.tmp = new THREE.Vector3();
+        this.tmp2 = new THREE.Vector3();
+
+        // init
+
+        clothFunction(x, y, this.position); // position
+        clothFunction(x, y, this.previous); // previous
+        clothFunction(x, y, this.original);
+      }
+
+      // Force -> Acceleration
+
+      Particle.prototype.addForce = function(force) {
+        this.a.add(this.tmp2.copy(force).multiplyScalar(this.invMass));
+      };
+
+      // Performs Verlet integration
+
+      Particle.prototype.integrate = function(timesq) {
+        var newPos = this.tmp.subVectors(this.position, this.previous);
+        newPos.multiplyScalar(DRAG).add(this.position);
+        newPos.add(this.a.multiplyScalar(timesq));
+
+        this.tmp = this.previous;
+        this.previous = this.position;
+        this.position = newPos;
+
+        this.a.set(0, 0, 0);
+      };
+
+      var diff = new THREE.Vector3();
+
+      function satisfyConstraints(p1, p2, distance) {
+        diff.subVectors(p2.position, p1.position);
+        var currentDist = diff.length();
+        if (currentDist === 0) return; // prevents division by 0
+        var correction = diff.multiplyScalar(1 - distance / currentDist);
+        var correctionHalf = correction.multiplyScalar(0.04);
+        p1.position.add(correctionHalf);
+        p2.position.sub(correctionHalf);
+      }
+
+      function Cloth(w, h) {
+        w = w || 10;
+        h = h || 10;
+        this.w = w;
+        this.h = h;
+
+        var particles = [];
+        var constraints = [];
+
+        var u, v;
+
+        // Create particles
+        for (v = 0; v <= h; v++) {
+          for (u = 0; u <= w; u++) {
+            particles.push(new Particle(u / w, v / h, 0, MASS));
+          }
+        }
+
+        // Structural
+
+        for (v = 0; v < h; v++) {
+          for (u = 0; u < w; u++) {
+            constraints.push([
+              particles[index(u, v)],
+              particles[index(u, v + 1)],
+              restDistance
+            ]);
+
+            constraints.push([
+              particles[index(u, v)],
+              particles[index(u + 1, v)],
+              restDistance
+            ]);
+          }
+        }
+
+        for (u = w, v = 0; v < h; v++) {
+          constraints.push([
+            particles[index(u, v)],
+            particles[index(u, v + 1)],
+            restDistance
+          ]);
+        }
+
+        for (v = h, u = 0; u < w; u++) {
+          constraints.push([
+            particles[index(u, v)],
+            particles[index(u + 1, v)],
+            restDistance
+          ]);
+        }
+
+        this.particles = particles;
+        this.constraints = constraints;
+
+        function index(u, v) {
+          return u + v * (w + 1);
+        }
+
+        this.index = index;
+      }
+
+      function simulate(time) {
+        if (!lastTime) {
+          lastTime = time;
+          return;
+        }
+
+        var i, j, il, particles, particle, constraints, constraint;
+
+        // Aerodynamics forces
+
+        if (params.enableWind) {
+          var indx;
+          var normal = new THREE.Vector3();
+          var indices = clothGeometry.index;
+          var normals = clothGeometry.attributes.normal;
+
+          particles = cloth.particles;
+
+          for (i = 0, il = indices.count; i < il; i += 3) {
+            for (j = 0; j < 3; j++) {
+              indx = indices.getX(i + j);
+              normal.fromBufferAttribute(normals, indx);
+              tmpForce
+                .copy(normal)
+                .normalize()
+                .multiplyScalar(normal.dot(windForce));
+              particles[indx].addForce(tmpForce);
+            }
+          }
+        }
 
-			import * as THREE from '../build/three.module.js';
+        for (
+          particles = cloth.particles, i = 0, il = particles.length;
+          i < il;
+          i++
+        ) {
+          particle = particles[i];
+          particle.addForce(gravity);
+          particle.integrate(TIMESTEP_SQ);
+        }
+
+        // Start Constraints
 
-			import Stats from './jsm/libs/stats.module.js';
-			import { GUI } from './jsm/libs/dat.gui.module.js';
+        constraints = cloth.constraints;
+        il = constraints.length;
 
-			import { OrbitControls } from './jsm/controls/OrbitControls.js';
+        for (i = 0; i < il; i++) {
+          constraint = constraints[i];
+          satisfyConstraints(constraint[0], constraint[1], constraint[2]);
+        }
 
-			/*
-			 * Cloth Simulation using a relaxed constraints solver
-			 */
+        // // Floor Constraints
+
+        // for ( particles = cloth.particles, i = 0, il = particles.length; i < il; i ++ ) {
+
+        // 	particle = particles[ i ];
+        // 	pos = particle.position;
+        // 	if ( pos.y < - 250 ) {
+
+        // 		pos.y = - 250;
+
+        // 	}
+
+        // }
+      }
+
+      /* testing cloth simulation */
+
+      var container, stats;
+      var camera, scene, renderer;
 
-			// Suggested Readings
+      var clothGeometry;
+      var object;
+
+      init();
+      animate();
+
+      function init() {
+        container = document.createElement("div");
+        document.body.appendChild(container);
+
+        // scene
 
-			// Advanced Character Physics by Thomas Jakobsen Character
-			// http://freespace.virgin.net/hugo.elias/models/m_cloth.htm
-			// http://en.wikipedia.org/wiki/Cloth_modeling
-			// http://cg.alexandra.dk/tag/spring-mass-system/
-			// Real-time Cloth Animation http://www.darwin3d.com/gamedev/articles/col0599.pdf
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xcce0ff);
+        scene.fog = new THREE.Fog(0xcce0ff, 500, 10000);
 
-			var params = {
-				enableWind: true,
-				showBall: false,
-			};
+        // camera
 
-			var DAMPING = 0.03;
-			var DRAG = 1 - DAMPING;
-			var MASS = 0.1;
-			var restDistance = 25;
+        camera = new THREE.PerspectiveCamera(
+          30,
+          window.innerWidth / window.innerHeight,
+          1,
+          10000
+        );
+        camera.position.set(1000, 50, 1500);
 
-			var xSegs = 10;
-			var ySegs = 10;
+        // lights
 
-			var clothFunction = plane( restDistance * xSegs, restDistance * ySegs );
+        scene.add(new THREE.AmbientLight(0x666666));
 
-			var cloth = new Cloth( xSegs, ySegs );
+        var light = new THREE.DirectionalLight(0xdfebff, 1);
+        light.position.set(50, 200, 100);
+        light.position.multiplyScalar(1.3);
 
-			var GRAVITY = 981 * 1.4;
-			var gravity = new THREE.Vector3( 0, - GRAVITY, 0 ).multiplyScalar( MASS );
+        light.castShadow = true;
 
+        light.shadow.mapSize.width = 1024;
+        light.shadow.mapSize.height = 1024;
 
-			var TIMESTEP = 18 / 1000;
-			var TIMESTEP_SQ = TIMESTEP * TIMESTEP;
+        var d = 300;
 
-			var windForce = new THREE.Vector3( 0, 0, 0 );
+        light.shadow.camera.left = -d;
+        light.shadow.camera.right = d;
+        light.shadow.camera.top = d;
+        light.shadow.camera.bottom = -d;
 
-			var ballPosition = new THREE.Vector3( 0, - 45, 0 );
-			var ballSize = 60; //40
+        light.shadow.camera.far = 1000;
 
-			var tmpForce = new THREE.Vector3();
+        scene.add(light);
 
-			var lastTime;
+        // cloth material
 
+        var loader = new THREE.TextureLoader();
+        var clothTexture = loader.load("textures/patterns/10000_o.png");
+        clothTexture.anisotropy = 16;
 
-			function plane( width, height ) {
+        var clothMaterial = new THREE.MeshLambertMaterial({
+          map: clothTexture,
+          side: THREE.DoubleSide,
+          alphaTest: 0.5
+        });
 
-				return function ( u, v, target ) {
+        // cloth geometry
 
-					var x = ( u - 0.5 ) * width;
-					var y = ( v + 0.5 ) * height;
-					var z = 0;
+        clothGeometry = new THREE.ParametricBufferGeometry(
+          clothFunction,
+          cloth.w,
+          cloth.h
+        );
 
-					target.set( x, y, z );
+        // cloth mesh
 
-				};
+        object = new THREE.Mesh(clothGeometry, clothMaterial);
+        object.position.set(0, 300, 0);
+        object.castShadow = true;
+        scene.add(object);
 
-			}
+        // 回転させる
+        var quaternion = object.quaternion;
+        var target = new THREE.Quaternion();
+        var axis = new THREE.Vector3(1, 1, 1).normalize();
+        target.setFromAxisAngle(axis, Math.PI / 2);
+        quaternion.multiply(target);
 
-			function Particle( x, y, z, mass ) {
+        object.customDepthMaterial = new THREE.MeshDepthMaterial({
+          depthPacking: THREE.RGBADepthPacking,
+          map: clothTexture,
+          alphaTest: 0.5
+        });
 
-				this.position = new THREE.Vector3();
-				this.previous = new THREE.Vector3();
-				this.original = new THREE.Vector3();
-				this.a = new THREE.Vector3( 0, 0, 0 ); // acceleration
-				this.mass = mass;
-				this.invMass = 1 / mass;
-				this.tmp = new THREE.Vector3();
-				this.tmp2 = new THREE.Vector3();
+        // ground
 
-				// init
+        // var groundTexture = loader.load( 'textures/terrain/grasslight-big.jpg' );
+        // groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
+        // groundTexture.repeat.set( 25, 25 );
+        // groundTexture.anisotropy = 16;
 
-				clothFunction( x, y, this.position ); // position
-				clothFunction( x, y, this.previous ); // previous
-				clothFunction( x, y, this.original );
+        // var groundMaterial = new THREE.MeshLambertMaterial( { map: groundTexture } );
 
-			}
+        // var mesh = new THREE.Mesh( new THREE.PlaneBufferGeometry( 20000, 20000 ), groundMaterial );
+        // mesh.position.y = - 250;
+        // mesh.rotation.x = - Math.PI / 2;
+        // mesh.receiveShadow = true;
+        // scene.add( mesh );
 
-			// Force -> Acceleration
+        // renderer
 
-			Particle.prototype.addForce = function ( force ) {
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
 
-				this.a.add(
-					this.tmp2.copy( force ).multiplyScalar( this.invMass )
-				);
+        container.appendChild(renderer.domElement);
 
-			};
+        renderer.gammaInput = true;
+        renderer.gammaOutput = true;
 
+        renderer.shadowMap.enabled = true;
 
-			// Performs Verlet integration
+        // controls
+        var controls = new OrbitControls(camera, renderer.domElement);
+        controls.maxPolarAngle = Math.PI * 0.5;
+        controls.minDistance = 1000;
+        controls.maxDistance = 5000;
 
-			Particle.prototype.integrate = function ( timesq ) {
+        // performance monitor
 
-				var newPos = this.tmp.subVectors( this.position, this.previous );
-				newPos.multiplyScalar( DRAG ).add( this.position );
-				newPos.add( this.a.multiplyScalar( timesq ) );
+        stats = new Stats();
+        container.appendChild(stats.dom);
 
-				this.tmp = this.previous;
-				this.previous = this.position;
-				this.position = newPos;
+        //
 
-				this.a.set( 0, 0, 0 );
+        window.addEventListener("resize", onWindowResize, false);
 
-			};
+        //
 
+        var gui = new GUI();
+        gui.add(params, "enableWind");
+      }
 
-			var diff = new THREE.Vector3();
+      //
 
-			function satisfyConstraints( p1, p2, distance ) {
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
 
-				diff.subVectors( p2.position, p1.position );
-				var currentDist = diff.length();
-				if ( currentDist === 0 ) return; // prevents division by 0
-				var correction = diff.multiplyScalar( 1 - distance / currentDist );
-				var correctionHalf = correction.multiplyScalar( 0.5 );
-				p1.position.add( correctionHalf );
-				p2.position.sub( correctionHalf );
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
 
-			}
+      //
 
+      function animate() {
+        requestAnimationFrame(animate);
 
-			function Cloth( w, h ) {
+        var time = Date.now();
 
-				w = w || 10;
-				h = h || 10;
-				this.w = w;
-				this.h = h;
+        var windStrength = Math.cos(time / 7000) * WIND_STRENGTH + 40;
 
-				var particles = [];
-				var constraints = [];
+        windForce.set(
+          Math.sin(time / 2000),
+          Math.cos(time / 3000),
+          Math.sin(time / 1000)
+        );
+        windForce.normalize();
+        windForce.multiplyScalar(windStrength);
 
-				var u, v;
+        simulate(time);
+        render();
+        stats.update();
+      }
 
-				// Create particles
-				for ( v = 0; v <= h; v ++ ) {
+      function render() {
+        console.log(object);
 
-					for ( u = 0; u <= w; u ++ ) {
+        var p = cloth.particles;
 
-						particles.push(
-							new Particle( u / w, v / h, 0, MASS )
-						);
+        var isTele = object.position.y < -300;
+        for (var i = 0, il = p.length; i < il; i++) {
+          var v = p[i].position;
 
-					}
+          if (isTele) {
+            object.visible = false;
 
-				}
+            clothGeometry.attributes.position.setXYZ(i, v.x, v.y + 30, v.z);
+            cloth.particles[i].position.y = v.y + 30;
+            object.position.set(0, cloth.particles[0].position.y + 30, 0);
+            // 回転させる
+            var quaternion = object.quaternion;
+            var target = new THREE.Quaternion();
+            var axis = new THREE.Vector3(1, 1, 1).normalize();
+            target.setFromAxisAngle(axis, Math.PI / 2);
+            quaternion.multiply(target);
 
-				// Structural
+            object.visible = true;
+          } else {
+            clothGeometry.attributes.position.setXYZ(i, v.x, v.y, v.z);
+            cloth.particles[i].position.y = v.y;
+            object.position.set(0, cloth.particles[0].position.y, 0);
+          }
+        }
 
-				for ( v = 0; v < h; v ++ ) {
+        // if () {
+        //   object.translateY(1000);
 
-					for ( u = 0; u < w; u ++ ) {
+        // } else {
 
-						constraints.push( [
-							particles[ index( u, v ) ],
-							particles[ index( u, v + 1 ) ],
-							restDistance
-						] );
+        // }
+        console.log(isTele);
+        console.log(object.position.y);
+        console.log(cloth.particles[0].position.y);
 
-						constraints.push( [
-							particles[ index( u, v ) ],
-							particles[ index( u + 1, v ) ],
-							restDistance
-						] );
+        clothGeometry.attributes.position.needsUpdate = true;
 
-					}
+        clothGeometry.computeVertexNormals();
 
-				}
-
-				for ( u = w, v = 0; v < h; v ++ ) {
-
-					constraints.push( [
-						particles[ index( u, v ) ],
-						particles[ index( u, v + 1 ) ],
-						restDistance
-
-					] );
-
-				}
-
-				for ( v = h, u = 0; u < w; u ++ ) {
-
-					constraints.push( [
-						particles[ index( u, v ) ],
-						particles[ index( u + 1, v ) ],
-						restDistance
-					] );
-
-				}
-
-
-				// While many systems use shear and bend springs,
-				// the relaxed constraints model seems to be just fine
-				// using structural springs.
-				// Shear
-				// var diagonalDist = Math.sqrt(restDistance * restDistance * 2);
-
-
-				// for (v=0;v<h;v++) {
-				// 	for (u=0;u<w;u++) {
-
-				// 		constraints.push([
-				// 			particles[index(u, v)],
-				// 			particles[index(u+1, v+1)],
-				// 			diagonalDist
-				// 		]);
-
-				// 		constraints.push([
-				// 			particles[index(u+1, v)],
-				// 			particles[index(u, v+1)],
-				// 			diagonalDist
-				// 		]);
-
-				// 	}
-				// }
-
-
-				this.particles = particles;
-				this.constraints = constraints;
-
-				function index( u, v ) {
-
-					return u + v * ( w + 1 );
-
-				}
-
-				this.index = index;
-
-			}
-
-			function simulate( time ) {
-
-				if ( ! lastTime ) {
-
-					lastTime = time;
-					return;
-
-				}
-
-				var i, j, il, particles, particle, constraints, constraint;
-
-				// Aerodynamics forces
-
-				if ( params.enableWind ) {
-
-					var indx;
-					var normal = new THREE.Vector3();
-					var indices = clothGeometry.index;
-					var normals = clothGeometry.attributes.normal;
-
-					particles = cloth.particles;
-
-					for ( i = 0, il = indices.count; i < il; i += 3 ) {
-
-						for ( j = 0; j < 3; j ++ ) {
-
-							indx = indices.getX( i + j );
-							normal.fromBufferAttribute( normals, indx );
-							tmpForce.copy( normal ).normalize().multiplyScalar( normal.dot( windForce ) );
-							particles[ indx ].addForce( tmpForce );
-
-						}
-
-					}
-
-				}
-
-				for ( particles = cloth.particles, i = 0, il = particles.length; i < il; i ++ ) {
-
-					particle = particles[ i ];
-					particle.addForce( gravity );
-
-					particle.integrate( TIMESTEP_SQ );
-
-				}
-
-				// Start Constraints
-
-				constraints = cloth.constraints;
-				il = constraints.length;
-
-				for ( i = 0; i < il; i ++ ) {
-
-					constraint = constraints[ i ];
-					satisfyConstraints( constraint[ 0 ], constraint[ 1 ], constraint[ 2 ] );
-
-				}
-
-				// Ball Constraints
-
-				ballPosition.z = - Math.sin( Date.now() / 600 ) * 90; //+ 40;
-				ballPosition.x = Math.cos( Date.now() / 400 ) * 70;
-
-				if ( params.showBall ) {
-
-					sphere.visible = true;
-
-					for ( particles = cloth.particles, i = 0, il = particles.length; i < il; i ++ ) {
-
-						particle = particles[ i ];
-						var pos = particle.position;
-						diff.subVectors( pos, ballPosition );
-						if ( diff.length() < ballSize ) {
-
-							// collided
-							diff.normalize().multiplyScalar( ballSize );
-							pos.copy( ballPosition ).add( diff );
-
-						}
-
-					}
-
-				} else {
-
-					sphere.visible = false;
-
-				}
-
-
-				// Floor Constraints
-
-				for ( particles = cloth.particles, i = 0, il = particles.length; i < il; i ++ ) {
-
-					particle = particles[ i ];
-					pos = particle.position;
-					if ( pos.y < - 250 ) {
-
-						pos.y = - 250;
-
-					}
-
-				}
-
-
-			}
-
-			/* testing cloth simulation */
-
-			var container, stats;
-			var camera, scene, renderer;
-
-			var clothGeometry;
-			var sphere;
-			var object;
-
-			init();
-			animate();
-
-			function init() {
-
-				container = document.createElement( 'div' );
-				document.body.appendChild( container );
-
-				// scene
-
-				scene = new THREE.Scene();
-				scene.background = new THREE.Color( 0xcce0ff );
-				scene.fog = new THREE.Fog( 0xcce0ff, 500, 10000 );
-
-				// camera
-
-				camera = new THREE.PerspectiveCamera( 30, window.innerWidth / window.innerHeight, 1, 10000 );
-				camera.position.set( 1000, 50, 1500 );
-
-				// lights
-
-				scene.add( new THREE.AmbientLight( 0x666666 ) );
-
-				var light = new THREE.DirectionalLight( 0xdfebff, 1 );
-				light.position.set( 50, 200, 100 );
-				light.position.multiplyScalar( 1.3 );
-
-				light.castShadow = true;
-
-				light.shadow.mapSize.width = 1024;
-				light.shadow.mapSize.height = 1024;
-
-				var d = 300;
-
-				light.shadow.camera.left = - d;
-				light.shadow.camera.right = d;
-				light.shadow.camera.top = d;
-				light.shadow.camera.bottom = - d;
-
-				light.shadow.camera.far = 1000;
-
-				scene.add( light );
-
-				// cloth material
-
-				var loader = new THREE.TextureLoader();
-				var clothTexture = loader.load( 'textures/patterns/circuit_pattern.png' );
-				clothTexture.anisotropy = 16;
-
-				var clothMaterial = new THREE.MeshLambertMaterial( {
-					map: clothTexture,
-					side: THREE.DoubleSide,
-					alphaTest: 0.5
-				} );
-
-				// cloth geometry
-
-				clothGeometry = new THREE.ParametricBufferGeometry( clothFunction, cloth.w, cloth.h );
-
-				// cloth mesh
-
-				object = new THREE.Mesh( clothGeometry, clothMaterial );
-				object.position.set( 0, 0, 0 );
-				object.castShadow = true;
-				scene.add( object );
-
-				object.customDepthMaterial = new THREE.MeshDepthMaterial( {
-					depthPacking: THREE.RGBADepthPacking,
-					map: clothTexture,
-					alphaTest: 0.5
-				} );
-
-				// sphere
-
-				var ballGeo = new THREE.SphereBufferGeometry( ballSize, 32, 16 );
-				var ballMaterial = new THREE.MeshLambertMaterial();
-
-				sphere = new THREE.Mesh( ballGeo, ballMaterial );
-				sphere.castShadow = true;
-				sphere.receiveShadow = true;
-				sphere.visible = false;
-				scene.add( sphere );
-
-				// ground
-
-				var groundTexture = loader.load( 'textures/terrain/grasslight-big.jpg' );
-				groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
-				groundTexture.repeat.set( 25, 25 );
-				groundTexture.anisotropy = 16;
-
-				var groundMaterial = new THREE.MeshLambertMaterial( { map: groundTexture } );
-
-				var mesh = new THREE.Mesh( new THREE.PlaneBufferGeometry( 20000, 20000 ), groundMaterial );
-				mesh.position.y = - 250;
-				mesh.rotation.x = - Math.PI / 2;
-				mesh.receiveShadow = true;
-				scene.add( mesh );
-
-				// renderer
-
-				renderer = new THREE.WebGLRenderer( { antialias: true } );
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( window.innerWidth, window.innerHeight );
-
-				container.appendChild( renderer.domElement );
-
-				renderer.gammaInput = true;
-				renderer.gammaOutput = true;
-
-				renderer.shadowMap.enabled = true;
-
-				// controls
-				var controls = new OrbitControls( camera, renderer.domElement );
-				controls.maxPolarAngle = Math.PI * 0.5;
-				controls.minDistance = 1000;
-				controls.maxDistance = 5000;
-
-				// performance monitor
-
-				stats = new Stats();
-				container.appendChild( stats.dom );
-
-				//
-
-				window.addEventListener( 'resize', onWindowResize, false );
-
-				//
-
-				var gui = new GUI();
-				gui.add( params, 'enableWind' );
-				gui.add( params, 'showBall' );
-
-			}
-
-			//
-
-			function onWindowResize() {
-
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-
-				renderer.setSize( window.innerWidth, window.innerHeight );
-
-			}
-
-			//
-
-			function animate() {
-
-				requestAnimationFrame( animate );
-
-				var time = Date.now();
-
-				var windStrength = Math.cos( time / 7000 ) * 20 + 40;
-
-				windForce.set( Math.sin( time / 2000 ), Math.cos( time / 3000 ), Math.sin( time / 1000 ) );
-				windForce.normalize();
-				windForce.multiplyScalar( windStrength );
-
-				simulate( time );
-				render();
-				stats.update();
-
-			}
-
-			function render() {
-
-				var p = cloth.particles;
-
-				for ( var i = 0, il = p.length; i < il; i ++ ) {
-
-					var v = p[ i ].position;
-
-					clothGeometry.attributes.position.setXYZ( i, v.x, v.y, v.z );
-
-				}
-
-				clothGeometry.attributes.position.needsUpdate = true;
-
-				clothGeometry.computeVertexNormals();
-
-				sphere.position.copy( ballPosition );
-
-				renderer.render( scene, camera );
-
-			}
-
-		</script>
-	</body>
+        renderer.render(scene, camera);
+      }
+    </script>
+  </body>
 </html>
