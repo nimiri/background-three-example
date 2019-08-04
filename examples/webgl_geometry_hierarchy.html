@@ -10,6 +10,28 @@
     <link type="text/css" rel="stylesheet" href="main.css" />
   </head>
   <body>
+    <div id="three-canvas"></div>
+
+    <h1><span>three.js for background</span></h1>
+
+    <div class="main-contents">
+      <span>Main Content1</span>
+      <ul>
+        <li>aaaaa</li>
+        <li>bbbbb</li>
+        <li>ccccc</li>
+      </ul>
+    </div>
+
+    <div class="main-contents">
+      <span>Main Content2</span>
+      <ul>
+        <li>111111</li>
+        <li>222222</li>
+        <li>333333</li>
+      </ul>
+    </div>
+
     <script type="module">
       import * as THREE from "../build/three.module.js";
 
@@ -66,12 +88,14 @@
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+        document
+          .getElementById("three-canvas")
+          .appendChild(renderer.domElement);
 
         //
 
-        stats = new Stats();
-        document.body.appendChild(stats.dom);
+        // stats = new Stats();
+        // document.body.appendChild(stats.dom);
 
         //
 
@@ -103,7 +127,7 @@
         requestAnimationFrame(animate);
 
         render();
-        stats.update();
+        // stats.update();
       }
 
       function render() {
