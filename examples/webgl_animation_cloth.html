@@ -54,17 +54,18 @@
       var MASS = 50000;
       var restDistance = 50;
 
-      var WIND_STRENGTH = 900000;
+      var WIND_STRENGTH = 25000;
 
       var xSegs = 1;
       var ySegs = 2;
 
       var clothFunction = plane(restDistance * xSegs, restDistance * ySegs);
 
-      var cloth = new Cloth(xSegs, ySegs);
+      //   var cloth = new Cloth(xSegs, ySegs);
+      var clothes = [];
 
-      var GRAVITY = 150 * 1.4;
-      var gravity = new THREE.Vector3(50, -GRAVITY, 50).multiplyScalar(MASS);
+      var GRAVITY = 200 * 1.4;
+      //   var gravity = new THREE.Vector3(50, -GRAVITY, 50).multiplyScalar(MASS);
 
       var TIMESTEP = 18 / 1000;
       var TIMESTEP_SQ = TIMESTEP * TIMESTEP;
@@ -75,7 +76,7 @@
 
       var lastTime;
 
-      var tmpTime = 0;
+      var MAX_CLOTH_COUNT = 40;
 
       function plane(width, height) {
         return function(u, v, target) {
@@ -204,49 +205,61 @@
           return;
         }
 
-        var i, j, il, particles, particle, constraints, constraint;
+        var i, j, k, il, kl, particles, particle, constraints, constraint;
 
         // Aerodynamics forces
 
         if (params.enableWind) {
-          var indx;
-          var normal = new THREE.Vector3();
-          var indices = clothGeometry.index;
-          var normals = clothGeometry.attributes.normal;
+          for (k = 0, kl = objects.length; k < kl; k++) {
+            var indx;
+            var normal = new THREE.Vector3();
+            var indices = clothGeometrys[k].index;
+            var normals = clothGeometrys[k].attributes.normal;
 
-          particles = cloth.particles;
+            particles = clothes[k].particles;
 
-          for (i = 0, il = indices.count; i < il; i += 3) {
-            for (j = 0; j < 3; j++) {
-              indx = indices.getX(i + j);
-              normal.fromBufferAttribute(normals, indx);
-              tmpForce
-                .copy(normal)
-                .normalize()
-                .multiplyScalar(normal.dot(windForce));
-              particles[indx].addForce(tmpForce);
+            for (i = 0, il = indices.count; i < il; i += 3) {
+              for (j = 0; j < 3; j++) {
+                indx = indices.getX(i + j);
+                normal.fromBufferAttribute(normals, indx);
+                tmpForce
+                  .copy(normal)
+                  .normalize()
+                  .multiplyScalar(
+                    normal.dot(windForce) * (k + 1) * Math.random()
+                  );
+                particles[indx].addForce(tmpForce);
+              }
             }
           }
         }
 
-        for (
-          particles = cloth.particles, i = 0, il = particles.length;
-          i < il;
-          i++
-        ) {
-          particle = particles[i];
-          particle.addForce(gravity);
-          particle.integrate(TIMESTEP_SQ);
-        }
+        for (k = 0, kl = objects.length; k < kl; k++) {
+          for (
+            particles = clothes[k].particles, i = 0, il = particles.length;
+            i < il;
+            i++
+          ) {
+            var gravity = new THREE.Vector3(
+              Math.random() * 500 - 250,
+              -GRAVITY,
+              Math.random() * 500 - 250
+            ).multiplyScalar(MASS);
 
-        // Start Constraints
+            particle = particles[i];
+            particle.addForce(gravity);
+            particle.integrate(TIMESTEP_SQ);
+          }
 
-        constraints = cloth.constraints;
-        il = constraints.length;
+          // Start Constraints
 
-        for (i = 0; i < il; i++) {
-          constraint = constraints[i];
-          satisfyConstraints(constraint[0], constraint[1], constraint[2]);
+          constraints = clothes[k].constraints;
+          il = constraints.length;
+
+          for (i = 0; i < il; i++) {
+            constraint = constraints[i];
+            satisfyConstraints(constraint[0], constraint[1], constraint[2]);
+          }
         }
 
         // // Floor Constraints
@@ -271,6 +284,8 @@
 
       var clothGeometry;
       var object;
+      var clothGeometrys = [];
+      var objects = [];
 
       init();
       animate();
@@ -321,37 +336,79 @@
 
         // cloth material
 
+        var textures = [
+          "10000_o",
+          "10000_u",
+          "5000_o",
+          "5000_u",
+          "1000_o",
+          "1000_u"
+        ];
+
         var loader = new THREE.TextureLoader();
-        var clothTexture = loader.load("textures/patterns/10000_o.png");
-        clothTexture.anisotropy = 16;
 
-        var clothMaterial = new THREE.MeshLambertMaterial({
-          map: clothTexture,
-          side: THREE.DoubleSide,
-          alphaTest: 0.5
-        });
+        // Cloth追加処理
+        for (var i = 0; i < MAX_CLOTH_COUNT; i++) {
+          clothes.push(new Cloth(xSegs, ySegs));
 
-        // cloth geometry
+          var clothTexture = loader.load(
+            "textures/patterns/" +
+              textures[Math.floor(Math.random() * textures.length)] +
+              ".png"
+          );
+          clothTexture.anisotropy = 16;
 
-        clothGeometry = new THREE.ParametricBufferGeometry(
-          clothFunction,
-          cloth.w,
-          cloth.h
-        );
+          var clothMaterial = new THREE.MeshLambertMaterial({
+            map: clothTexture,
+            side: THREE.DoubleSide,
+            alphaTest: 0.5
+          });
 
-        // cloth mesh
+          // cloth geometry
 
-        object = new THREE.Mesh(clothGeometry, clothMaterial);
-        object.position.set(0, 300, 0);
-        object.castShadow = true;
-        scene.add(object);
+          // clothGeometry = new THREE.ParametricBufferGeometry(
+          //   clothFunction,
+          //   cloth.w,
+          //   cloth.h
+          // );
 
-        // 回転させる
-        var quaternion = object.quaternion;
-        var target = new THREE.Quaternion();
-        var axis = new THREE.Vector3(1, 1, 1).normalize();
-        target.setFromAxisAngle(axis, Math.PI / 2);
-        quaternion.multiply(target);
+          clothGeometrys.push(
+            new THREE.ParametricBufferGeometry(
+              clothFunction,
+              clothes[i].w,
+              clothes[i].h
+            )
+          );
+
+          // cloth mesh
+
+          // object = new THREE.Mesh(clothGeometry, clothMaterial);
+          // object.position.set(0, 300, 0);
+          // object.castShadow = true;
+          // scene.add(object);
+
+          object = new THREE.Mesh(clothGeometrys[i], clothMaterial);
+          object.position.set(
+            Math.random() * 1000 - 500,
+            Math.random() * 500 + 300,
+            Math.random() * 1000 - 500
+          );
+          object.castShadow = true;
+
+          var quaternion = object.quaternion;
+          var target = new THREE.Quaternion();
+          var axis = new THREE.Vector3(
+            Math.random() - 0.5,
+            Math.random() - 0.5,
+            Math.random() - 0.5
+          ).normalize();
+          target.setFromAxisAngle(axis, Math.PI / 3);
+          quaternion.multiply(target);
+
+          scene.add(object);
+
+          objects.push(object);
+        }
 
         object.customDepthMaterial = new THREE.MeshDepthMaterial({
           depthPacking: THREE.RGBADepthPacking,
@@ -442,31 +499,52 @@
       function render() {
         console.log(object);
 
-        var p = cloth.particles;
-
         var isTele = object.position.y < -300;
-        for (var i = 0, il = p.length; i < il; i++) {
-          var v = p[i].position;
 
-          if (isTele) {
-            object.visible = false;
+        console.log(clothGeometrys[0]);
+        console.log(p);
 
-            clothGeometry.attributes.position.setXYZ(i, v.x, v.y + 30, v.z);
-            cloth.particles[i].position.y = v.y + 30;
-            object.position.set(0, cloth.particles[0].position.y + 30, 0);
-            // 回転させる
-            var quaternion = object.quaternion;
-            var target = new THREE.Quaternion();
-            var axis = new THREE.Vector3(1, 1, 1).normalize();
-            target.setFromAxisAngle(axis, Math.PI / 2);
-            quaternion.multiply(target);
+        for (var i = 0, il = objects.length; i < il; i++) {
+          var p = clothes[i].particles;
 
-            object.visible = true;
-          } else {
-            clothGeometry.attributes.position.setXYZ(i, v.x, v.y, v.z);
-            cloth.particles[i].position.y = v.y;
-            object.position.set(0, cloth.particles[0].position.y, 0);
+          for (var j = 0, jl = p.length; j < jl; j++) {
+            var v = p[j].position;
+
+            //   if (isTele) {
+            //     object.visible = false;
+
+            //     clothGeometry.attributes.position.setXYZ(i, v.x, v.y + 30, v.z);
+            //     cloth.particles[i].position.y = v.y + 30;
+            //     object.position.set(0, cloth.particles[0].position.y + 30, 0);
+            //     // 回転させる
+            //     var quaternion = object.quaternion;
+            //     var target = new THREE.Quaternion();
+            //     var axis = new THREE.Vector3(1, 1, 1).normalize();
+            //     target.setFromAxisAngle(axis, Math.PI / 2);
+            //     quaternion.multiply(target);
+
+            //     object.visible = true;
+            //   } else {
+            //     clothGeometry.attributes.position.setXYZ(i, v.x, v.y, v.z);
+            //     cloth.particles[i].position.y = v.y;
+            //     object.position.set(0, cloth.particles[0].position.y, 0);
+            //   }
+
+            clothGeometrys[i].attributes.position.setXYZ(j, v.x, v.y, v.z);
           }
+          clothGeometrys[i].attributes.position.needsUpdate = true;
+
+          clothGeometrys[i].computeVertexNormals();
+
+          var quaternion = objects[i].quaternion;
+          var target = new THREE.Quaternion();
+          var axis = new THREE.Vector3(
+            Math.random() * 0.001,
+            0,
+            Math.random() * 0.001
+          );
+          target.setFromAxisAngle(axis, Math.PI / 180);
+          quaternion.multiply(target);
         }
 
         // if () {
@@ -477,11 +555,10 @@
         // }
         console.log(isTele);
         console.log(object.position.y);
-        console.log(cloth.particles[0].position.y);
+        console.log(clothes[0].particles[0].position.y);
 
-        clothGeometry.attributes.position.needsUpdate = true;
-
-        clothGeometry.computeVertexNormals();
+        console.log(clothes[0].particles);
+        console.log(clothes[1].particles);
 
         renderer.render(scene, camera);
       }
