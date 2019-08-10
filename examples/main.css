@@ -58,11 +58,12 @@ h1 {
   color: #000;
   width: 100vw;
   height: 100vh;
-  display: flex; /* 要素をflexboxに対応させる */
-  align-items: center; /* 縦方向の中央揃え */
-  justify-content: center; /* 横方向の中央揃え */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-direction: column;
   font-size: 2em;
+  margin: 0;
 }
 
 h1 > span {
@@ -73,8 +74,8 @@ h1 > span {
   background-color: #fff;
 }
 
-h1 > span:before,
-h1 > span:after {
+h1 > span::before,
+h1 > span::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -86,19 +87,50 @@ h1 > span:after {
   transform: rotate(-60deg);
 }
 
-h1 > span:before {
+h1 > span::before {
   left: 0;
 }
 
-h1 > span:after {
+h1 > span::after {
   right: 0;
 }
 
+h1::before,
+h1::after {
+  position: absolute;
+  content: "";
+  top: 85vh;
+  left: 47vw;
+}
+
+h1::before {
+  background: #000;
+  left: 47vw;
+  width: 6vw;
+  height: 6vw;
+  border-radius: 50%;
+}
+h1::after {
+  box-sizing: border-box;
+  width: 2vw;
+  height: 2vw;
+  margin: 1.5vw 2vw;
+  border-right: 0.5vw solid #fff;
+  border-bottom: 0.5vw solid #fff;
+  transform: rotate(45deg);
+}
+
 .main-contents {
-  width: 100vw;
+  width: 90vw;
   font-size: 1.3em;
   color: #fff;
   background: #000;
+  box-sizing: border-box;
   padding: 3vh 10vw;
-  margin-bottom: 10vw;
+  margin: 0 5vw 10vw;
+}
+
+#copyright {
+  width: 100vw;
+  text-align: center;
 }
