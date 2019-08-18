@@ -9,4 +9,4 @@ https://threejs.org/examples/#webgl_geometry_hierarchy
 https://nimiri.github.io/background-three-example/examples/webgl_geometry_hierarchy.html
 
 ## おまけ
-https://nimiri.github.io/background-three-example/examples/webgl_animation_cloth.html
+https://nimiri.github.io/background-three-example/examples/okane_kasegitai_hito_he.html
