@@ -393,8 +393,6 @@
       }
 
       function render() {
-        console.log(object);
-
         var isTele = object.position.y < -300;
 
         for (var i = 0, il = objects.length; i < il; i++) {
@@ -425,8 +423,6 @@
           target.setFromAxisAngle(axis, Math.PI / 180);
           quaternion.multiply(target);
         }
-
-        console.log(camera.position);
 
         renderer.render(scene, camera);
       }
