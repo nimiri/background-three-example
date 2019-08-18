@@ -1,0 +1,128 @@
+body {
+  margin: 0;
+  background-color: #000;
+  color: #fff;
+  font-family: Monospace;
+  font-size: 13px;
+  line-height: 24px;
+  text-align: center;
+}
+
+a {
+  color: #ff0;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+canvas {
+  display: block;
+}
+
+#info {
+  position: absolute;
+  top: 0px;
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  text-align: center;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  z-index: 1; /* TODO Solve this in HTML */
+}
+
+.dg.ac {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  z-index: 2 !important; /* TODO Solve this in HTML */
+}
+
+#three-canvas {
+  position: fixed;
+  z-index: -999;
+  top: 0;
+  left: 0;
+}
+
+h1 {
+  color: #f00;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  font-size: 2.4em;
+  margin: 0;
+}
+
+h1 > span {
+  position: relative;
+  display: inline-block;
+  padding: 5vw 5vw;
+  font-weight: bold;
+  background-color: #000;
+  border: 5px solid #f00;
+  -webkit-text-stroke: 0.1px #ff0;
+  text-stroke: 0.1px #ff0;
+}
+
+h1::after {
+  position: absolute;
+  content: "";
+  top: 85vh;
+  left: 47vw;
+}
+
+h1::after {
+  box-sizing: border-box;
+  width: 2vw;
+  height: 2vw;
+  margin: 1.5vw 2vw;
+  border-right: 0.5vw solid #ff0;
+  border-bottom: 0.5vw solid #ff0;
+  transform: rotate(45deg);
+}
+
+.main-contents {
+  width: 90vw;
+  font-size: 1.3em;
+  color: #fff;
+  background: #000;
+  box-sizing: border-box;
+  padding: 3vh 10vw;
+  margin: 10vh 5vw 40vh;
+  text-align: center;
+}
+
+.text-red {
+  color: #f00;
+}
+
+.text-yellow {
+  color: #ff0;
+}
+
+.text-bold {
+  font-weight: bold;
+}
+
+.text-large {
+  font-size: 2em;
+}
+
+#copyright {
+  width: 100vw;
+  text-align: center;
+}
