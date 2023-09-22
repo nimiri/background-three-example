@@ -6,7 +6,7 @@ https://threejs.org/examples/#webgl_geometry_hierarchy
 を背景に、Webサイトを作るサンプル。
 
 ## Demo
-https://nimiri.github.io/background-three-example/examples/webgl_geometry_hierarchy.html
+https://nimiri.github.io/background-three-example/examples/index.html
 
 ## おまけ
 https://nimiri.github.io/background-three-example/examples/okane_kasegitai_hito_he.html
